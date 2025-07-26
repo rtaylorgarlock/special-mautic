@@ -8,5 +8,4 @@ USER root
 # We specify the working directory to ensure it runs in the right place.
 RUN composer require symfony/amazon-mailer --working-dir=/var/www/html
 
-# Switch back to the default, non-root user for better security.
-USER www-data
+# DO NOT switch the user back to www-data here. The entrypoint script will handle this.
