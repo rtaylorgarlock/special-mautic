@@ -1,0 +1,74 @@
+# docker-compose.yml for a Git-based Mautic 5 deployment
+version: '3.8'
+
+services:
+  database:
+    image: percona/percona-server:8.0
+    container_name: mautic_db
+    restart: always
+    environment:
+      # Use secrets management in production (e.g., Coolify secrets)
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - mautic-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mautic:
+    # Build the Mautic image from the Dockerfile in the current directory.
+    build: .
+    container_name: mautic_app
+    restart: always
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      # Map host port 8080 to container port 80. Coolify's proxy will handle public access.
+      - "8080:80"
+    environment:
+      - MAUTIC_DB_HOST=database
+      - MAUTIC_DB_USER=${MYSQL_USER}
+      - MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
+      - MAUTIC_DB_NAME=${MYSQL_DATABASE}
+      # Set to false here, as cron jobs should be managed by a separate container or host cron.
+      - MAUTIC_RUN_CRON_JOBS=false
+      - MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
+      - PHP_INI_MEMORY_LIMIT=512M
+      - PHP_INI_MAX_EXECUTION_TIME=300
+      - MAUTIC_SITE_URL=${MAUTIC_SITE_URL}
+    volumes:
+      # IMPORTANT: We now map specific data directories, not the whole application.
+      # The paths inside the container must match your project structure.
+      # This assumes the standard 'mautic/recommended-project' with a /docroot.
+      - mautic_config:/var/www/html/docroot/config
+      - mautic_media:/var/www/html/docroot/media
+      # It's also good practice to persist logs.
+      - mautic_logs:/var/www/html/docroot/var/logs
+    networks:
+      - mautic-net
+
+volumes:
+  db_data:
+    driver: local
+  # Define the new, more specific volumes
+  mautic_config:
+    driver: local
+  mautic_media:
+    driver: local
+  mautic_logs:
+    driver: local
+
+networks:
+  mautic-net:
+    driver: bridge
